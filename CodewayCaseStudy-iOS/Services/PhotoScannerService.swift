@@ -89,7 +89,6 @@ class PhotoScannerService {
             others = stored.others
             startIndex = stored.processedCount
 
-            // Kullanıcıya kaldığı yeri hemen göster
             let processed = stored.processedCount
             if processed > 0 {
                 DispatchQueue.main.async {
@@ -144,7 +143,6 @@ class PhotoScannerService {
                     let snapshotGroups = groups
                     let snapshotOthers = others
 
-                    // Progress state'i persist et
                     self.saveScanProgress(
                         processedCount: processed,
                         totalCount: total,
@@ -171,7 +169,6 @@ class PhotoScannerService {
 
     // MARK: - Persisting Scan Results (final state)
 
-    /// Son tarama sonucunu diske JSON olarak kaydeder.
     func saveScanResult(_ result: ScanResult) {
         var dict: [String: [String]] = [:]
 
@@ -192,8 +189,6 @@ class PhotoScannerService {
         }
     }
 
-    /// Diskten en son kaydedilmiş sonucu yükler ve tekrar PHAsset'lere çevirir.
-    /// YOKSA → nil döner.
     func loadPersistedScanResult() -> ScanResult? {
         let url = scanResultFileURL()
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -268,9 +263,12 @@ class PhotoScannerService {
         }
     }
 
-    /// Kaldığı yerden taramayı sürdürebilmek için daha önce kaydedilmiş progress varsa, onu yükler.
-    /// YOKSA → nil döner.
-    private func loadPersistedScanProgress() -> (processedCount: Int, totalCount: Int, groups: [PhotoGroup: [PHAsset]], others: [PHAsset])? {
+    private func loadPersistedScanProgress() -> (
+        processedCount: Int,
+        totalCount: Int,
+        groups: [PhotoGroup: [PHAsset]],
+        others: [PHAsset]
+    )? {
         let url = scanProgressFileURL()
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
@@ -336,5 +334,11 @@ class PhotoScannerService {
         let fm = FileManager.default
         let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
         return dir.appendingPathComponent("scanProgress.json")
+    }
+
+    /// Dışarıdan "yarım kalmış tarama var mı?" diye bakmak için public helper
+    func hasPendingScanProgress() -> Bool {
+        let url = scanProgressFileURL()
+        return FileManager.default.fileExists(atPath: url.path)
     }
 }

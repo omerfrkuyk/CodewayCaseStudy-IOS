@@ -127,7 +127,15 @@ class HomeViewController: UIViewController {
             guard let self = self else { return }
 
             if granted {
-                // 1) Önce final scan result var mı, ona bak
+
+                // 1) Eğer yarım kalmış bir tarama varsa → önce onu devam ettir
+                if self.scanner.hasPendingScanProgress() {
+                    print("Persist DEBUG: found pending scan progress, resuming...")
+                    self.startScan(resumeIfPossible: true)
+                    return
+                }
+
+                // 2) Progress yok ama daha önce bitmiş bir sonuç varsa → onu yükle
                 if let cached = self.scanner.loadPersistedScanResult() {
                     print("Persist DEBUG: loaded cached scan result")
                     self.scanResult = cached
@@ -136,10 +144,12 @@ class HomeViewController: UIViewController {
                     self.progressContainer.isHidden = true
                     self.navigationItem.rightBarButtonItem?.isEnabled = true
                     self.title = "Photo Groups"
-                } else {
-                    // 2) Final result yoksa, scan başlat ve mümkünse progress'ten devam et
-                    self.startScan(resumeIfPossible: true)
+                    return
                 }
+
+                // 3) Ne progress ne result varsa → sıfırdan tara
+                self.startScan(resumeIfPossible: false)
+
             } else {
                 self.title = "Permission denied"
                 self.progressContainer.isHidden = true
@@ -149,7 +159,7 @@ class HomeViewController: UIViewController {
     }
 
     @objc private func rescanTapped() {
-        // Rescan → her zaman sıfırdan başlasın, önceki progress'i dikkate almasın
+        // Kullanıcı manuel "Rescan" derse → her zaman sıfırdan başlasın
         startScan(resumeIfPossible: false)
     }
 
@@ -158,7 +168,7 @@ class HomeViewController: UIViewController {
 
         isScanning = true
 
-        // Eski listeyi hemen silmiyoruz; kullanıcı eski sonuçları görmeye devam ediyor.
+        // Eski listeyi hemen silmiyoruz; kullanıcı eski sonucu görmeye devam etsin.
         processedCount = 0
         totalCount = 0
         progressView.progress = 0
