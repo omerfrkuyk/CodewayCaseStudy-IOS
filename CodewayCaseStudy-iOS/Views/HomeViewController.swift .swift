@@ -35,7 +35,7 @@ class HomeViewController: UIViewController {
         stack.spacing = 8
         stack.alignment = .fill
         stack.distribution = .fill
-        stack.isHidden = true
+        stack.isHidden = true   // başta gizli
         return stack
     }()
 
@@ -68,6 +68,7 @@ class HomeViewController: UIViewController {
         requestPermissionAndStartScan()
     }
 
+    /// iOS 26 için UIScreen.main yerine, view'ın bağlı olduğu windowScene'den ekran genişliğini alıyoruz.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
@@ -144,9 +145,10 @@ class HomeViewController: UIViewController {
         guard !isScanning else { return }
 
         isScanning = true
-        scanResult = nil
-        displayGroups.removeAll()
-        collectionView.reloadData()
+
+        // ÖNEMLİ: Eski displayGroups'u SİL MİYORUZ.
+        // Kullanıcı eski sonuçları görmeye devam ediyor,
+        // yeni tarama geldikçe bu liste canlı olarak güncellenecek.
 
         processedCount = 0
         totalCount = 0
@@ -166,6 +168,7 @@ class HomeViewController: UIViewController {
                 if total > 0 {
                     let fraction = Float(processed) / Float(total)
                     let percent = Int(fraction * 100)
+
                     self.progressView.progress = fraction
                     self.progressLabel.text = "Scanning photos: \(percent)% (\(processed)/\(total))"
                 } else {
@@ -173,9 +176,9 @@ class HomeViewController: UIViewController {
                 }
             },
             partialUpdate: { [weak self] groups, others in
+                // Ara snapshot ile listeyi canlı canlı güncelle
                 guard let self = self else { return }
-                // Her snapshot geldiğinde grupları live olarak güncelle
-                self.rebuildDisplayGroups(groups: groups, others: others)
+                self.updateDisplayGroups(groups: groups, others: others)
             },
             completion: { [weak self] result in
                 guard let self = self else { return }
@@ -184,32 +187,35 @@ class HomeViewController: UIViewController {
                 self.navigationItem.rightBarButtonItem?.isEnabled = true
 
                 self.scanResult = result
+                // Son durumda da bir kez daha final halini uygula
+                self.updateDisplayGroups(groups: result.groups, others: result.others)
                 self.progressContainer.isHidden = true
-
-                // Son hal ile bir kez daha grupları kur
-                self.rebuildDisplayGroups(groups: result.groups, others: result.others)
             }
         )
     }
 
-    /// Verilen groups & others snapshot'ına göre displayGroups'u yeniden kurar.
-    private func rebuildDisplayGroups(groups: [PhotoGroup: [PHAsset]], others: [PHAsset]) {
-        displayGroups.removeAll()
+    /// groups + others sözlüklerinden, ekranda gösterilecek listeyi üretir.
+    private func updateDisplayGroups(
+        groups: [PhotoGroup: [PHAsset]],
+        others: [PHAsset]
+    ) {
+        var newDisplay: [(name: String, count: Int)] = []
 
         for group in PhotoGroup.allCases {
             let count = groups[group]?.count ?? 0
             if count > 0 {
                 let name = group.rawValue.uppercased()
-                displayGroups.append((name: name, count: count))
+                newDisplay.append((name: name, count: count))
             }
         }
 
         let otherCount = others.count
         if otherCount > 0 {
-            displayGroups.append((name: "OTHER", count: otherCount))
+            newDisplay.append((name: "OTHER", count: otherCount))
         }
 
-        collectionView.reloadData()
+        self.displayGroups = newDisplay
+        self.collectionView.reloadData()
     }
 }
 
@@ -252,21 +258,19 @@ extension HomeViewController: UICollectionViewDataSource, UICollectionViewDelega
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
+        let data = displayGroups[indexPath.row]
+
         guard let result = scanResult else { return }
 
-        let data = displayGroups[indexPath.row]
-        let groupName = data.name
+        var assets: [PHAsset] = []
 
-        let assets: [PHAsset]
-        if groupName == "OTHER" {
+        if data.name == "OTHER" {
             assets = result.others
-        } else if let group = PhotoGroup(rawValue: groupName.lowercased()) {
+        } else if let group = PhotoGroup(rawValue: data.name.lowercased()) {
             assets = result.groups[group] ?? []
-        } else {
-            assets = []
         }
 
-        let detailView = GroupDetailView(title: groupName, assets: assets)
+        let detailView = GroupDetailView(title: data.name, assets: assets)
         let hosting = UIHostingController(rootView: detailView)
         navigationController?.pushViewController(hosting, animated: true)
     }
@@ -282,5 +286,7 @@ struct HomeViewControllerWrapper: UIViewControllerRepresentable {
         return nav
     }
 
-    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
+    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
+        // Şimdilik güncellenecek ekstra bir şey yok.
+    }
 }

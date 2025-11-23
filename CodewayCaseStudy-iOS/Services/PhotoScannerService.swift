@@ -41,11 +41,10 @@ class PhotoScannerService {
         return assets
     }
 
-    /// Tüm fotoğrafları tarar ve gruplar.
-    /// - Parameters:
-    ///   - progress: İşlenen/Toplam sayısını bildirir.
-    ///   - partialUpdate: Gruplar ve others için ANLIK (live) snapshot verir.
-    ///   - completion: Tarama tamamen bittiğinde final sonucu döner.
+    /// Bütün fotoları tarar ve gruplar.
+    /// progress  → sadece adetler (UI'daki progress bar için)
+    /// partialUpdate → o ana kadarki grup & others snapshot'ı (listeyi canlı güncellemek için)
+    /// completion → tarama bittiğinde final sonuç
     func scanAndGroupAllPhotos(
         progress: @escaping (_ processed: Int, _ total: Int) -> Void,
         partialUpdate: @escaping (_ groups: [PhotoGroup: [PHAsset]], _ others: [PHAsset]) -> Void,
@@ -54,7 +53,6 @@ class PhotoScannerService {
         let assets = fetchAllPhotoAssets()
         let total = assets.count
 
-        // Başlangıçta boş gruplar
         var groups: [PhotoGroup: [PHAsset]] = [:]
         for group in PhotoGroup.allCases {
             groups[group] = []
@@ -63,6 +61,7 @@ class PhotoScannerService {
 
         DispatchQueue.global(qos: .userInitiated).async {
             for (index, asset) in assets.enumerated() {
+                // 0.0 - 1.0 arası hash değeri
                 let hashValue = asset.reliableHash()
 
                 if let group = PhotoGroup.group(for: hashValue) {
@@ -73,7 +72,7 @@ class PhotoScannerService {
 
                 let processed = index + 1
 
-                // Her 10 fotoda bir (veya sonda) progress + live snapshot gönder
+                // Her 10 fotoda bir (veya son fotoda) UI'ya hem progress hem snapshot gönder.
                 if processed % 10 == 0 || processed == total {
                     let snapshotGroups = groups
                     let snapshotOthers = others
