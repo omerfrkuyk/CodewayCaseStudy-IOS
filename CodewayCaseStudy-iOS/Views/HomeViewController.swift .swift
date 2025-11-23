@@ -65,7 +65,7 @@ class HomeViewController: UIViewController {
         title = "Photo Groups"
 
         setupUI()
-        requestPermissionAndStartScan()
+        requestPermissionAndLoadOrScan()
     }
 
     /// iOS 26 için UIScreen.main yerine, view'ın bağlı olduğu windowScene'den ekran genişliğini alıyoruz.
@@ -121,14 +121,30 @@ class HomeViewController: UIViewController {
         )
     }
 
-    // MARK: - Scanning
+    // MARK: - Scanning / Loading
 
-    private func requestPermissionAndStartScan() {
+    /// Uygulama açılınca:
+    /// 1) İzin iste
+    /// 2) Eğer daha önce kaydedilmiş sonuç varsa → onları yükle
+    /// 3) Yoksa → normal scan başlat
+    private func requestPermissionAndLoadOrScan() {
         scanner.requestPhotoAccess { [weak self] granted in
             guard let self = self else { return }
 
             if granted {
-                self.startScan()
+                // Önce cache'e bak
+                if let cached = self.scanner.loadPersistedScanResult() {
+                    print("Persist DEBUG: loaded cached scan result")
+                    self.scanResult = cached
+                    self.updateDisplayGroups(groups: cached.groups, others: cached.others)
+
+                    self.progressContainer.isHidden = true
+                    self.navigationItem.rightBarButtonItem?.isEnabled = true
+                    self.title = "Photo Groups"
+                } else {
+                    // Cache yoksa normal tara
+                    self.startScan()
+                }
             } else {
                 self.title = "Permission denied"
                 self.progressContainer.isHidden = true
@@ -146,9 +162,8 @@ class HomeViewController: UIViewController {
 
         isScanning = true
 
-        // ÖNEMLİ: Eski displayGroups'u SİL MİYORUZ.
-        // Kullanıcı eski sonuçları görmeye devam ediyor,
-        // yeni tarama geldikçe bu liste canlı olarak güncellenecek.
+        // Eski sonuçları hemen silmiyoruz; kullanıcı eski listeyi görmeye devam ediyor.
+        // Yeni scan buldukça updateDisplayGroups çalışacak.
 
         processedCount = 0
         totalCount = 0
@@ -176,7 +191,6 @@ class HomeViewController: UIViewController {
                 }
             },
             partialUpdate: { [weak self] groups, others in
-                // Ara snapshot ile listeyi canlı canlı güncelle
                 guard let self = self else { return }
                 self.updateDisplayGroups(groups: groups, others: others)
             },
@@ -187,14 +201,16 @@ class HomeViewController: UIViewController {
                 self.navigationItem.rightBarButtonItem?.isEnabled = true
 
                 self.scanResult = result
-                // Son durumda da bir kez daha final halini uygula
                 self.updateDisplayGroups(groups: result.groups, others: result.others)
                 self.progressContainer.isHidden = true
+
+                // ✅ Final sonucu persist et
+                self.scanner.saveScanResult(result)
             }
         )
     }
 
-    /// groups + others sözlüklerinden, ekranda gösterilecek listeyi üretir.
+    /// groups + others sözlüklerinden, ekranda gösterilecek listeyi üretir ve reload eder.
     private func updateDisplayGroups(
         groups: [PhotoGroup: [PHAsset]],
         others: [PHAsset]
@@ -287,6 +303,6 @@ struct HomeViewControllerWrapper: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
-        // Şimdilik güncellenecek ekstra bir şey yok.
+        // Şimdilik güncelleyecek ekstra bir şey yok.
     }
 }
