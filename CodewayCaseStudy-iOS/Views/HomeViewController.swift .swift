@@ -1,6 +1,6 @@
 //
 //  HomeViewController.swift
-//  PhotoGroupingCaseStudy
+//  CodewayCaseStudy-iOS
 //
 //  Created by Ömer Uyanık on 20.11.2025.
 //
@@ -10,7 +10,9 @@ import SwiftUI
 import Photos
 
 class HomeViewController: UIViewController {
-    
+
+    // MARK: - UI
+
     private let progressLabel: UILabel = {
         let label = UILabel()
         label.font = .systemFont(ofSize: 14, weight: .medium)
@@ -37,7 +39,6 @@ class HomeViewController: UIViewController {
         return stack
     }()
 
-   
     private let collectionView: UICollectionView = {
         let layout = UICollectionViewFlowLayout()
         layout.minimumLineSpacing = 16
@@ -67,7 +68,6 @@ class HomeViewController: UIViewController {
         requestPermissionAndStartScan()
     }
 
-
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
@@ -86,7 +86,6 @@ class HomeViewController: UIViewController {
     // MARK: - Setup
 
     private func setupUI() {
-       
         progressContainer.addArrangedSubview(progressLabel)
         progressContainer.addArrangedSubview(progressView)
 
@@ -113,7 +112,6 @@ class HomeViewController: UIViewController {
         collectionView.register(UICollectionViewCell.self,
                                 forCellWithReuseIdentifier: "cell")
 
-        // Navigation bar'a "Rescan" butonu
         navigationItem.rightBarButtonItem = UIBarButtonItem(
             title: "Rescan",
             style: .plain,
@@ -146,6 +144,7 @@ class HomeViewController: UIViewController {
         guard !isScanning else { return }
 
         isScanning = true
+        scanResult = nil
         displayGroups.removeAll()
         collectionView.reloadData()
 
@@ -167,12 +166,16 @@ class HomeViewController: UIViewController {
                 if total > 0 {
                     let fraction = Float(processed) / Float(total)
                     let percent = Int(fraction * 100)
-
                     self.progressView.progress = fraction
                     self.progressLabel.text = "Scanning photos: \(percent)% (\(processed)/\(total))"
                 } else {
                     self.progressLabel.text = "Scanning photos..."
                 }
+            },
+            partialUpdate: { [weak self] groups, others in
+                guard let self = self else { return }
+                // Her snapshot geldiğinde grupları live olarak güncelle
+                self.rebuildDisplayGroups(groups: groups, others: others)
             },
             completion: { [weak self] result in
                 guard let self = self else { return }
@@ -181,31 +184,36 @@ class HomeViewController: UIViewController {
                 self.navigationItem.rightBarButtonItem?.isEnabled = true
 
                 self.scanResult = result
-                self.buildDisplayGroups()
                 self.progressContainer.isHidden = true
-                self.collectionView.reloadData()
+
+                // Son hal ile bir kez daha grupları kur
+                self.rebuildDisplayGroups(groups: result.groups, others: result.others)
             }
         )
     }
 
-    private func buildDisplayGroups() {
+    /// Verilen groups & others snapshot'ına göre displayGroups'u yeniden kurar.
+    private func rebuildDisplayGroups(groups: [PhotoGroup: [PHAsset]], others: [PHAsset]) {
         displayGroups.removeAll()
-        guard let result = scanResult else { return }
 
         for group in PhotoGroup.allCases {
-            let count = result.groups[group]?.count ?? 0
+            let count = groups[group]?.count ?? 0
             if count > 0 {
                 let name = group.rawValue.uppercased()
                 displayGroups.append((name: name, count: count))
             }
         }
 
-        let otherCount = result.others.count
+        let otherCount = others.count
         if otherCount > 0 {
             displayGroups.append((name: "OTHER", count: otherCount))
         }
+
+        collectionView.reloadData()
     }
 }
+
+// MARK: - UICollectionViewDataSource & Delegate
 
 extension HomeViewController: UICollectionViewDataSource, UICollectionViewDelegate {
 
@@ -249,7 +257,6 @@ extension HomeViewController: UICollectionViewDataSource, UICollectionViewDelega
         let data = displayGroups[indexPath.row]
         let groupName = data.name
 
-        // PHasset
         let assets: [PHAsset]
         if groupName == "OTHER" {
             assets = result.others
@@ -259,10 +266,7 @@ extension HomeViewController: UICollectionViewDataSource, UICollectionViewDelega
             assets = []
         }
 
-        
         let detailView = GroupDetailView(title: groupName, assets: assets)
-
-    
         let hosting = UIHostingController(rootView: detailView)
         navigationController?.pushViewController(hosting, animated: true)
     }
@@ -278,7 +282,5 @@ struct HomeViewControllerWrapper: UIViewControllerRepresentable {
         return nav
     }
 
-    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
-      
-    }
+    func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {}
 }

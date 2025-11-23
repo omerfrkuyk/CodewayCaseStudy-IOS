@@ -1,6 +1,6 @@
 //
 //  GroupDetailView.swift
-//  PhotoGroupingCaseStudy
+//  CodewayCaseStudy-iOS
 //
 //  Created by Ömer Uyanık on 21.11.2025.
 //
@@ -12,6 +12,12 @@ struct GroupDetailView: View {
     let title: String
     let assets: [PHAsset]
 
+    private let columns = [
+        GridItem(.flexible()),
+        GridItem(.flexible()),
+        GridItem(.flexible())
+    ]
+
     var body: some View {
         VStack {
             if assets.isEmpty {
@@ -20,14 +26,14 @@ struct GroupDetailView: View {
                     .padding()
             } else {
                 ScrollView {
-                    LazyVGrid(columns: [
-                        GridItem(.flexible()),
-                        GridItem(.flexible()),
-                        GridItem(.flexible())
-                    ], spacing: 8) {
-                        ForEach(assets, id: \.localIdentifier) { asset in
-                            PhotoThumbnail(asset: asset)
-                                .cornerRadius(8)
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(Array(assets.enumerated()), id: \.element.localIdentifier) { index, asset in
+                            NavigationLink {
+                                ImageDetailView(assets: assets, index: index)
+                            } label: {
+                                PhotoThumbnail(asset: asset)
+                                    .cornerRadius(8)
+                            }
                         }
                     }
                     .padding()

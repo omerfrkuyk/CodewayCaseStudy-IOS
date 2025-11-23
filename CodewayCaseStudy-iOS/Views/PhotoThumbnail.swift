@@ -1,6 +1,6 @@
 //
 //  PhotoThumbnail.swift
-//  PhotoGroupingCaseStudy
+//  CodewayCaseStudy-iOS
 //
 //  Created by Ömer Uyanık on 21.11.2025.
 //

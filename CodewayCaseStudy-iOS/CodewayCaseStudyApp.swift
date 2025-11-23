@@ -1,6 +1,6 @@
 //
 //  PhotoGroupingCaseStudyApp.swift
-//  PhotoGroupingCaseStudy
+//  CodewayCaseStudy-iOS
 //
 //  Created by Ömer Uyanık on 20.11.2025.
 //
