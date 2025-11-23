@@ -13,10 +13,18 @@ struct ScanResult {
     let others: [PHAsset]
 }
 
-/// Diskte saklayacağımız sade model (PHAsset yerine sadece localIdentifier string'leri)
+/// Diskte saklanacak sade sonuç modeli (PHAsset yerine localIdentifier string’leri)
 private struct PersistedScanResult: Codable {
     let groups: [String: [String]]   // "a", "b", ... -> [assetID]
     let others: [String]             // assetID listesi
+}
+
+/// Devam edebilmek için tarama esnasındaki progress state
+private struct PersistedScanProgress: Codable {
+    let processedCount: Int
+    let totalCount: Int
+    let groups: [String: [String]]   // groupKey -> [assetID]
+    let others: [String]             // [assetID]
 }
 
 class PhotoScannerService {
@@ -50,10 +58,13 @@ class PhotoScannerService {
     }
 
     /// Bütün fotoları tarar ve gruplar.
-    /// progress       → adet bazlı ilerleme (progress bar için)
-    /// partialUpdate  → o ana kadarki grup + others snapshot'ı (listeyi canlı güncellemek için)
-    /// completion     → final sonuç
+    ///
+    /// - resumeIfPossible: true ise, daha önce yarım kalmış bir tarama varsa kaldığı yerden devam etmeye çalışır.
+    /// - progress: adet bazlı ilerleme (progress bar için)
+    /// - partialUpdate: o ana kadarki grup + others snapshot'ı (listeyi canlı güncellemek için)
+    /// - completion: final sonuç
     func scanAndGroupAllPhotos(
+        resumeIfPossible: Bool,
         progress: @escaping (_ processed: Int, _ total: Int) -> Void,
         partialUpdate: @escaping (_ groups: [PhotoGroup: [PHAsset]], _ others: [PHAsset]) -> Void,
         completion: @escaping (ScanResult) -> Void
@@ -67,9 +78,57 @@ class PhotoScannerService {
         }
         var others: [PHAsset] = []
 
-        DispatchQueue.global(qos: .userInitiated).async {
-            for (index, asset) in assets.enumerated() {
-                // 0.0 - 1.0 arası hash
+        var startIndex = 0
+
+        // Eğer isteniyorsa ve geçerli bir progress varsa: oradan devam etmeye çalış
+        if resumeIfPossible,
+           let stored = loadPersistedScanProgress(),
+           stored.totalCount == total {
+
+            groups = stored.groups
+            others = stored.others
+            startIndex = stored.processedCount
+
+            // Kullanıcıya kaldığı yeri hemen göster
+            let processed = stored.processedCount
+            if processed > 0 {
+                DispatchQueue.main.async {
+                    progress(processed, total)
+                    partialUpdate(groups, others)
+                }
+            }
+        } else {
+            // Yeni tarama başlıyor → eski progress state’i temizle
+            clearScanProgress()
+        }
+
+        // Hiç foto yoksa direkt bitir
+        if total == 0 {
+            let result = ScanResult(groups: groups, others: others)
+            DispatchQueue.main.async {
+                self.clearScanProgress()
+                completion(result)
+            }
+            return
+        }
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self = self else { return }
+
+            // Eğer startIndex zaten total'e eşitse, demek ki daha önce bitmiş
+            if startIndex >= total {
+                let result = ScanResult(groups: groups, others: others)
+                DispatchQueue.main.async {
+                    self.clearScanProgress()
+                    completion(result)
+                }
+                return
+            }
+
+            for index in startIndex..<assets.count {
+                let asset = assets[index]
+
+                // 0.0 - 1.0 arası hash değeri
                 let hashValue = asset.reliableHash()
 
                 if let group = PhotoGroup.group(for: hashValue) {
@@ -80,10 +139,18 @@ class PhotoScannerService {
 
                 let processed = index + 1
 
-                // Her 10 fotoda bir (ve son fotoda) UI'ya progress + snapshot gönder
+                // Her 10 fotoda bir (veya son fotoda) UI'ya hem progress hem snapshot gönder, progress state'i kaydet
                 if processed % 10 == 0 || processed == total {
                     let snapshotGroups = groups
                     let snapshotOthers = others
+
+                    // Progress state'i persist et
+                    self.saveScanProgress(
+                        processedCount: processed,
+                        totalCount: total,
+                        groups: groups,
+                        others: others
+                    )
 
                     DispatchQueue.main.async {
                         progress(processed, total)
@@ -95,12 +162,14 @@ class PhotoScannerService {
             let result = ScanResult(groups: groups, others: others)
 
             DispatchQueue.main.async {
+                // Tarama tamamlandı → progress state gereksiz, silelim
+                self.clearScanProgress()
                 completion(result)
             }
         }
     }
 
-    // MARK: - Persisting Scan Results (JSON)
+    // MARK: - Persisting Scan Results (final state)
 
     /// Son tarama sonucunu diske JSON olarak kaydeder.
     func saveScanResult(_ result: ScanResult) {
@@ -167,11 +236,105 @@ class PhotoScannerService {
         }
     }
 
-    // MARK: - Helpers
+    // MARK: - Persisting Scan Progress (kaldığı yerden devam)
+
+    private func saveScanProgress(
+        processedCount: Int,
+        totalCount: Int,
+        groups: [PhotoGroup: [PHAsset]],
+        others: [PHAsset]
+    ) {
+        var dict: [String: [String]] = [:]
+
+        for (group, assets) in groups {
+            let ids = assets.map { $0.localIdentifier }
+            dict[group.rawValue] = ids
+        }
+
+        let othersIds = others.map { $0.localIdentifier }
+
+        let persisted = PersistedScanProgress(
+            processedCount: processedCount,
+            totalCount: totalCount,
+            groups: dict,
+            others: othersIds
+        )
+
+        do {
+            let data = try JSONEncoder().encode(persisted)
+            try data.write(to: scanProgressFileURL(), options: [.atomic])
+        } catch {
+            print("Persist DEBUG: failed to save scan progress → \(error)")
+        }
+    }
+
+    /// Kaldığı yerden taramayı sürdürebilmek için daha önce kaydedilmiş progress varsa, onu yükler.
+    /// YOKSA → nil döner.
+    private func loadPersistedScanProgress() -> (processedCount: Int, totalCount: Int, groups: [PhotoGroup: [PHAsset]], others: [PHAsset])? {
+        let url = scanProgressFileURL()
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+
+        do {
+            let data = try Data(contentsOf: url)
+            let persisted = try JSONDecoder().decode(PersistedScanProgress.self, from: data)
+
+            var groups: [PhotoGroup: [PHAsset]] = [:]
+            let fetchOptions = PHFetchOptions()
+
+            for (key, idList) in persisted.groups {
+                guard let group = PhotoGroup(rawValue: key) else { continue }
+
+                let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: idList, options: fetchOptions)
+                var assets: [PHAsset] = []
+                assets.reserveCapacity(fetchResult.count)
+
+                fetchResult.enumerateObjects { asset, _, _ in
+                    assets.append(asset)
+                }
+
+                groups[group] = assets
+            }
+
+            let othersFetch = PHAsset.fetchAssets(withLocalIdentifiers: persisted.others, options: fetchOptions)
+            var othersAssets: [PHAsset] = []
+            othersAssets.reserveCapacity(othersFetch.count)
+            othersFetch.enumerateObjects { asset, _, _ in
+                othersAssets.append(asset)
+            }
+
+            return (
+                processedCount: persisted.processedCount,
+                totalCount: persisted.totalCount,
+                groups: groups,
+                others: othersAssets
+            )
+
+        } catch {
+            print("Persist DEBUG: failed to load scan progress → \(error)")
+            return nil
+        }
+    }
+
+    private func clearScanProgress() {
+        let url = scanProgressFileURL()
+        if FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
+    }
+
+    // MARK: - File URLs
 
     private func scanResultFileURL() -> URL {
         let fm = FileManager.default
         let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
         return dir.appendingPathComponent("scanResult.json")
+    }
+
+    private func scanProgressFileURL() -> URL {
+        let fm = FileManager.default
+        let dir = fm.urls(for: .documentDirectory, in: .userDomainMask).first!
+        return dir.appendingPathComponent("scanProgress.json")
     }
 }

@@ -35,7 +35,7 @@ class HomeViewController: UIViewController {
         stack.spacing = 8
         stack.alignment = .fill
         stack.distribution = .fill
-        stack.isHidden = true   // başta gizli
+        stack.isHidden = true
         return stack
     }()
 
@@ -68,7 +68,6 @@ class HomeViewController: UIViewController {
         requestPermissionAndLoadOrScan()
     }
 
-    /// iOS 26 için UIScreen.main yerine, view'ın bağlı olduğu windowScene'den ekran genişliğini alıyoruz.
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
 
@@ -123,16 +122,12 @@ class HomeViewController: UIViewController {
 
     // MARK: - Scanning / Loading
 
-    /// Uygulama açılınca:
-    /// 1) İzin iste
-    /// 2) Eğer daha önce kaydedilmiş sonuç varsa → onları yükle
-    /// 3) Yoksa → normal scan başlat
     private func requestPermissionAndLoadOrScan() {
         scanner.requestPhotoAccess { [weak self] granted in
             guard let self = self else { return }
 
             if granted {
-                // Önce cache'e bak
+                // 1) Önce final scan result var mı, ona bak
                 if let cached = self.scanner.loadPersistedScanResult() {
                     print("Persist DEBUG: loaded cached scan result")
                     self.scanResult = cached
@@ -142,8 +137,8 @@ class HomeViewController: UIViewController {
                     self.navigationItem.rightBarButtonItem?.isEnabled = true
                     self.title = "Photo Groups"
                 } else {
-                    // Cache yoksa normal tara
-                    self.startScan()
+                    // 2) Final result yoksa, scan başlat ve mümkünse progress'ten devam et
+                    self.startScan(resumeIfPossible: true)
                 }
             } else {
                 self.title = "Permission denied"
@@ -154,17 +149,16 @@ class HomeViewController: UIViewController {
     }
 
     @objc private func rescanTapped() {
-        startScan()
+        // Rescan → her zaman sıfırdan başlasın, önceki progress'i dikkate almasın
+        startScan(resumeIfPossible: false)
     }
 
-    private func startScan() {
+    private func startScan(resumeIfPossible: Bool) {
         guard !isScanning else { return }
 
         isScanning = true
 
-        // Eski sonuçları hemen silmiyoruz; kullanıcı eski listeyi görmeye devam ediyor.
-        // Yeni scan buldukça updateDisplayGroups çalışacak.
-
+        // Eski listeyi hemen silmiyoruz; kullanıcı eski sonuçları görmeye devam ediyor.
         processedCount = 0
         totalCount = 0
         progressView.progress = 0
@@ -172,9 +166,10 @@ class HomeViewController: UIViewController {
         progressContainer.isHidden = false
         navigationItem.rightBarButtonItem?.isEnabled = false
 
-        title = "Scanning..."
+        title = resumeIfPossible ? "Resuming scan..." : "Scanning..."
 
         scanner.scanAndGroupAllPhotos(
+            resumeIfPossible: resumeIfPossible,
             progress: { [weak self] processed, total in
                 guard let self = self else { return }
                 self.processedCount = processed
@@ -204,13 +199,12 @@ class HomeViewController: UIViewController {
                 self.updateDisplayGroups(groups: result.groups, others: result.others)
                 self.progressContainer.isHidden = true
 
-                // ✅ Final sonucu persist et
+                // Final sonuç → disk'e yaz
                 self.scanner.saveScanResult(result)
             }
         )
     }
 
-    /// groups + others sözlüklerinden, ekranda gösterilecek listeyi üretir ve reload eder.
     private func updateDisplayGroups(
         groups: [PhotoGroup: [PHAsset]],
         others: [PHAsset]
@@ -303,6 +297,6 @@ struct HomeViewControllerWrapper: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
-        // Şimdilik güncelleyecek ekstra bir şey yok.
+        // Şimdilik güncellenecek ekstra bir şey yok.
     }
 }
