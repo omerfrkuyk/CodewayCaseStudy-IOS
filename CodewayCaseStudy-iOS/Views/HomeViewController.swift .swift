@@ -128,14 +128,14 @@ class HomeViewController: UIViewController {
 
             if granted {
 
-                // 1) Eğer yarım kalmış bir tarama varsa → önce onu devam ettir
+                //yarım kalmış bir tarama varsa önce onu devam ettir
                 if self.scanner.hasPendingScanProgress() {
                     print("Persist DEBUG: found pending scan progress, resuming...")
                     self.startScan(resumeIfPossible: true)
                     return
                 }
 
-                // 2) Progress yok ama daha önce bitmiş bir sonuç varsa → onu yükle
+                //Progress yok ama daha önce bitmiş bir sonuç varsa yükle
                 if let cached = self.scanner.loadPersistedScanResult() {
                     print("Persist DEBUG: loaded cached scan result")
                     self.scanResult = cached
@@ -147,7 +147,7 @@ class HomeViewController: UIViewController {
                     return
                 }
 
-                // 3) Ne progress ne result varsa → sıfırdan tara
+                // progress veya result yoksa sıfırdan tara
                 self.startScan(resumeIfPossible: false)
 
             } else {
@@ -159,7 +159,7 @@ class HomeViewController: UIViewController {
     }
 
     @objc private func rescanTapped() {
-        // Kullanıcı manuel "Rescan" derse → her zaman sıfırdan başlasın
+        // Rescan tıklandığında baştan tarama başlat
         startScan(resumeIfPossible: false)
     }
 
@@ -168,7 +168,7 @@ class HomeViewController: UIViewController {
 
         isScanning = true
 
-        // Eski listeyi hemen silmiyoruz; kullanıcı eski sonucu görmeye devam etsin.
+        // eski sonucu görmeye devam etmek için
         processedCount = 0
         totalCount = 0
         progressView.progress = 0
@@ -307,6 +307,6 @@ struct HomeViewControllerWrapper: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ uiViewController: UINavigationController, context: Context) {
-        // Şimdilik güncellenecek ekstra bir şey yok.
+        
     }
 }

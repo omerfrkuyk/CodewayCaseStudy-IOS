@@ -61,7 +61,7 @@ struct ZoomablePhoto: View {
         }
     }
 
-    /// Thumbnail’de çalışanla aynı mantık, sadece daha büyük hedef boyut.
+    /// Thumbnail’de çalışanla aynı mantık sadece daha büyük hedef boyut.
     private func loadImage() {
         let manager = PHImageManager.default()
         let options = PHImageRequestOptions()
@@ -69,7 +69,7 @@ struct ZoomablePhoto: View {
         options.isNetworkAccessAllowed = true
         options.isSynchronous = false
 
-        // Thumbnail 400x400'dü; burada daha yüksek çözünürlük istiyoruz.
+        // Thumbnailden daha yüksek çözünürlük için
         let targetSize = CGSize(width: 1200, height: 1200)
 
         manager.requestImage(

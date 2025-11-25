@@ -13,13 +13,13 @@ struct ScanResult {
     let others: [PHAsset]
 }
 
-/// Diskte saklanacak sade sonuç modeli (PHAsset yerine localIdentifier string’leri)
+
 private struct PersistedScanResult: Codable {
-    let groups: [String: [String]]   // "a", "b", ... -> [assetID]
-    let others: [String]             // assetID listesi
+    let groups: [String: [String]]
+    let others: [String]
 }
 
-/// Devam edebilmek için tarama esnasındaki progress state
+/// Devam edebilmek için tarama esnasındaki progress takibi
 private struct PersistedScanProgress: Codable {
     let processedCount: Int
     let totalCount: Int
@@ -29,7 +29,7 @@ private struct PersistedScanProgress: Codable {
 
 class PhotoScannerService {
 
-    // MARK: - Public API
+    
 
     func requestPhotoAccess(completion: @escaping (Bool) -> Void) {
         PHPhotoLibrary.requestAuthorization { status in
@@ -61,8 +61,8 @@ class PhotoScannerService {
     ///
     /// - resumeIfPossible: true ise, daha önce yarım kalmış bir tarama varsa kaldığı yerden devam etmeye çalışır.
     /// - progress: adet bazlı ilerleme (progress bar için)
-    /// - partialUpdate: o ana kadarki grup + others snapshot'ı (listeyi canlı güncellemek için)
-    /// - completion: final sonuç
+    /// - partialUpdate: o ana kadarki grup + others  (listeyi canlı güncellemek için)
+    /// - completion:  sonuç
     func scanAndGroupAllPhotos(
         resumeIfPossible: Bool,
         progress: @escaping (_ processed: Int, _ total: Int) -> Void,
@@ -80,7 +80,7 @@ class PhotoScannerService {
 
         var startIndex = 0
 
-        // Eğer isteniyorsa ve geçerli bir progress varsa: oradan devam etmeye çalış
+        // Progress varsa devam ettirme
         if resumeIfPossible,
            let stored = loadPersistedScanProgress(),
            stored.totalCount == total {
@@ -97,11 +97,11 @@ class PhotoScannerService {
                 }
             }
         } else {
-            // Yeni tarama başlıyor → eski progress state’i temizle
+            // Yeni tarama başlarsa eski progressi silme
             clearScanProgress()
         }
 
-        // Hiç foto yoksa direkt bitir
+        // foto yoksa bitir
         if total == 0 {
             let result = ScanResult(groups: groups, others: others)
             DispatchQueue.main.async {
@@ -114,7 +114,7 @@ class PhotoScannerService {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
 
-            // Eğer startIndex zaten total'e eşitse, demek ki daha önce bitmiş
+            // Eğer startIndex zaten total'e eşitse,demek ki daha önce bitmiş
             if startIndex >= total {
                 let result = ScanResult(groups: groups, others: others)
                 DispatchQueue.main.async {
@@ -127,7 +127,7 @@ class PhotoScannerService {
             for index in startIndex..<assets.count {
                 let asset = assets[index]
 
-                // 0.0 - 1.0 arası hash değeri
+                
                 let hashValue = asset.reliableHash()
 
                 if let group = PhotoGroup.group(for: hashValue) {
@@ -138,7 +138,7 @@ class PhotoScannerService {
 
                 let processed = index + 1
 
-                // Her 10 fotoda bir (veya son fotoda) UI'ya hem progress hem snapshot gönder, progress state'i kaydet
+                // Her 10 fotoda bir progressi UI'a gönderme
                 if processed % 10 == 0 || processed == total {
                     let snapshotGroups = groups
                     let snapshotOthers = others
@@ -160,7 +160,7 @@ class PhotoScannerService {
             let result = ScanResult(groups: groups, others: others)
 
             DispatchQueue.main.async {
-                // Tarama tamamlandı → progress state gereksiz, silelim
+                
                 self.clearScanProgress()
                 completion(result)
             }
@@ -322,7 +322,7 @@ class PhotoScannerService {
         }
     }
 
-    // MARK: - File URLs
+    
 
     private func scanResultFileURL() -> URL {
         let fm = FileManager.default
@@ -336,7 +336,7 @@ class PhotoScannerService {
         return dir.appendingPathComponent("scanProgress.json")
     }
 
-    /// Dışarıdan "yarım kalmış tarama var mı?" diye bakmak için public helper
+    /// Yarım kalan tarama kontrol
     func hasPendingScanProgress() -> Bool {
         let url = scanProgressFileURL()
         return FileManager.default.fileExists(atPath: url.path)
